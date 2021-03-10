@@ -2,11 +2,12 @@ package com.alibaba.otter.canal.client.adapter.rdb.config;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Properties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.Yaml;
 
+import com.alibaba.otter.canal.client.adapter.config.YmlConfigBinder;
 import com.alibaba.otter.canal.client.adapter.support.MappingConfigsLoader;
 
 /**
@@ -20,18 +21,22 @@ public class ConfigLoader {
     private static Logger logger = LoggerFactory.getLogger(ConfigLoader.class);
 
     /**
-     * 加载HBase表映射配置
-     * 
+     * 加载RDB表映射配置
+     *
      * @return 配置名/配置文件名--对象
      */
-    public static Map<String, MappingConfig> load() {
+    public static Map<String, MappingConfig> load(Properties envProperties) {
         logger.info("## Start loading rdb mapping config ... ");
 
         Map<String, MappingConfig> result = new LinkedHashMap<>();
 
         Map<String, String> configContentMap = MappingConfigsLoader.loadConfigs("rdb");
         configContentMap.forEach((fileName, content) -> {
-            MappingConfig config = new Yaml().loadAs(content, MappingConfig.class);
+            MappingConfig config = YmlConfigBinder
+                .bindYmlToObj(null, content, MappingConfig.class, null, envProperties);
+            if (config == null) {
+                return;
+            }
             try {
                 config.validate();
             } catch (Exception e) {

@@ -81,7 +81,7 @@ public class TableMetaCache {
         }
     }
 
-    private TableMeta getTableMetaByDB(String fullname) throws IOException {
+    private synchronized TableMeta getTableMetaByDB(String fullname) throws IOException {
         try {
             ResultSetPacket packet = connection.query("show create table " + fullname);
             String[] names = StringUtils.split(fullname, "`.`");
@@ -105,7 +105,7 @@ public class TableMetaCache {
             TableMeta tableMeta = memoryTableMeta.find(schema, table);
             return tableMeta.getFields();
         } else {
-            return new ArrayList<FieldMeta>();
+            return new ArrayList<>();
         }
     }
 
@@ -113,7 +113,7 @@ public class TableMetaCache {
      * 处理desc table的结果
      */
     public static List<FieldMeta> parseTableMetaByDesc(ResultSetPacket packet) {
-        Map<String, Integer> nameMaps = new HashMap<String, Integer>(6, 1f);
+        Map<String, Integer> nameMaps = new HashMap<>(6, 1f);
         int index = 0;
         for (FieldPacket fieldPacket : packet.getFieldDescriptors()) {
             nameMaps.put(fieldPacket.getOriginalName(), index++);
@@ -121,7 +121,7 @@ public class TableMetaCache {
 
         int size = packet.getFieldDescriptors().size();
         int count = packet.getFieldValues().size() / packet.getFieldDescriptors().size();
-        List<FieldMeta> result = new ArrayList<FieldMeta>();
+        List<FieldMeta> result = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             FieldMeta meta = new FieldMeta();
             // 做一个优化，使用String.intern()，共享String对象，减少内存使用
@@ -159,16 +159,23 @@ public class TableMetaCache {
         return getTableMeta(schema, table, true, position);
     }
 
-    public TableMeta getTableMeta(String schema, String table, boolean useCache, EntryPosition position) {
+    public synchronized TableMeta getTableMeta(String schema, String table, boolean useCache, EntryPosition position) {
         TableMeta tableMeta = null;
         if (tableMetaTSDB != null) {
             tableMeta = tableMetaTSDB.find(schema, table);
             if (tableMeta == null) {
                 // 因为条件变化，可能第一次的tableMeta没取到，需要从db获取一次，并记录到snapshot中
                 String fullName = getFullName(schema, table);
+                ResultSetPacket packet = null;
+                String createDDL = null;
                 try {
-                    ResultSetPacket packet = connection.query("show create table " + fullName);
-                    String createDDL = null;
+                    try {
+                        packet = connection.query("show create table " + fullName);
+                    } catch (Exception e) {
+                        // 尝试做一次retry操作
+                        connection.reconnect();
+                        packet = connection.query("show create table " + fullName);
+                    }
                     if (packet.getFieldValues().size() > 0) {
                         createDDL = packet.getFieldValues().get(1);
                     }

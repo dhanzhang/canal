@@ -1,8 +1,11 @@
 package com.alibaba.otter.canal.client.adapter.rdb.config;
 
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
+
+import org.apache.commons.lang.StringUtils;
+
+import com.alibaba.otter.canal.client.adapter.support.AdapterConfig;
 
 /**
  * RDB表映射配置
@@ -10,17 +13,19 @@ import java.util.Set;
  * @author rewerma 2018-11-07 下午02:41:34
  * @version 1.0.0
  */
-public class MappingConfig {
+public class MappingConfig implements AdapterConfig {
 
-    private String    dataSourceKey;   // 数据源key
+    private String    dataSourceKey;      // 数据源key
 
-    private String    destination;     // canal实例或MQ的topic
+    private String    destination;        // canal实例或MQ的topic
 
-    private String    outerAdapterKey; // 对应适配器的key
+    private String    groupId;            // groupId
 
-    private Boolean   concurrent;      // 是否并行同步
+    private String    outerAdapterKey;    // 对应适配器的key
 
-    private DbMapping dbMapping;       // db映射配置
+    private boolean   concurrent = false; // 是否并行同步
+
+    private DbMapping dbMapping;          // db映射配置
 
     public String getDataSourceKey() {
         return dataSourceKey;
@@ -28,6 +33,14 @@ public class MappingConfig {
 
     public void setDataSourceKey(String dataSourceKey) {
         this.dataSourceKey = dataSourceKey;
+    }
+
+    public String getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
     }
 
     public String getOuterAdapterKey() {
@@ -38,11 +51,11 @@ public class MappingConfig {
         this.outerAdapterKey = outerAdapterKey;
     }
 
-    public Boolean getConcurrent() {
-        return concurrent == null ? false : concurrent;
+    public boolean getConcurrent() {
+        return concurrent;
     }
 
-    public void setConcurrent(Boolean concurrent) {
+    public void setConcurrent(boolean concurrent) {
         this.concurrent = concurrent;
     }
 
@@ -62,34 +75,49 @@ public class MappingConfig {
         this.destination = destination;
     }
 
+    public AdapterMapping getMapping() {
+        return dbMapping;
+    }
+
     public void validate() {
         if (dbMapping.database == null || dbMapping.database.isEmpty()) {
             throw new NullPointerException("dbMapping.database");
         }
-        if (dbMapping.table == null || dbMapping.table.isEmpty()) {
+        if (!dbMapping.getMirrorDb() && (dbMapping.table == null || dbMapping.table.isEmpty())) {
             throw new NullPointerException("dbMapping.table");
         }
-        if (dbMapping.targetTable == null || dbMapping.targetTable.isEmpty()) {
+        if (!dbMapping.getMirrorDb() && (dbMapping.targetTable == null || dbMapping.targetTable.isEmpty())) {
             throw new NullPointerException("dbMapping.targetTable");
         }
     }
 
-    public static class DbMapping {
+    public static class DbMapping implements AdapterMapping {
 
-        private String              database;                            // 数据库名或schema名
-        private String              table;                               // 表面名
-        private Map<String, String> targetPk;                            // 目标表主键字段
-        private boolean             mapAll      = false;                 // 映射所有字段
-        private String              targetTable;                         // 目标表名
-        private Map<String, String> targetColumns;                       // 目标表字段映射
+        private boolean             mirrorDb        = false;                 // 是否镜像库
+        private String              database;                                // 数据库名或schema名
+        private String              table;                                   // 表名
+        private Map<String, String> targetPk        = new LinkedHashMap<>(); // 目标表主键字段
+        private boolean             mapAll          = false;                 // 映射所有字段
+        private String              targetDb;                                // 目标库名
+        private String              targetTable;                             // 目标表名
+        private Map<String, String> targetColumns;                           // 目标表字段映射
 
-        private String              etlCondition;                        // etl条件sql
+        private boolean             caseInsensitive = false;                 // 目标表不区分大小写，默认是否
 
-        private Set<String>         families    = new LinkedHashSet<>(); // column family列表
-        private int                 readBatch   = 5000;
-        private int                 commitBatch = 5000;                  // etl等批量提交大小
+        private String              etlCondition;                            // etl条件sql
 
-        // private volatile Map<String, String> allColumns; // mapAll为true,自动设置改字段
+        private int                 readBatch       = 5000;
+        private int                 commitBatch     = 5000;                  // etl等批量提交大小
+
+        private Map<String, String> allMapColumns;
+
+        public boolean getMirrorDb() {
+            return mirrorDb;
+        }
+
+        public void setMirrorDb(boolean mirrorDb) {
+            this.mirrorDb = mirrorDb;
+        }
 
         public String getDatabase() {
             return database;
@@ -115,12 +143,20 @@ public class MappingConfig {
             this.targetPk = targetPk;
         }
 
-        public boolean isMapAll() {
+        public Boolean getMapAll() {
             return mapAll;
         }
 
-        public void setMapAll(boolean mapAll) {
+        public void setMapAll(Boolean mapAll) {
             this.mapAll = mapAll;
+        }
+
+        public String getTargetDb() {
+            return targetDb;
+        }
+
+        public void setTargetDb(String targetDb) {
+            this.targetDb = targetDb;
         }
 
         public String getTargetTable() {
@@ -132,11 +168,26 @@ public class MappingConfig {
         }
 
         public Map<String, String> getTargetColumns() {
+            if (targetColumns != null) {
+                targetColumns.forEach((key, value) -> {
+                    if (StringUtils.isEmpty(value)) {
+                        targetColumns.put(key, key);
+                    }
+                });
+            }
             return targetColumns;
         }
 
         public void setTargetColumns(Map<String, String> targetColumns) {
             this.targetColumns = targetColumns;
+        }
+
+        public boolean isCaseInsensitive() {
+            return caseInsensitive;
+        }
+
+        public void setCaseInsensitive(boolean caseInsensitive) {
+            this.caseInsensitive = caseInsensitive;
         }
 
         public String getEtlCondition() {
@@ -145,14 +196,6 @@ public class MappingConfig {
 
         public void setEtlCondition(String etlCondition) {
             this.etlCondition = etlCondition;
-        }
-
-        public Set<String> getFamilies() {
-            return families;
-        }
-
-        public void setFamilies(Set<String> families) {
-            this.families = families;
         }
 
         public int getReadBatch() {
@@ -171,12 +214,12 @@ public class MappingConfig {
             this.commitBatch = commitBatch;
         }
 
-        // public Map<String, String> getAllColumns() {
-        // return allColumns;
-        // }
-        //
-        // public void setAllColumns(Map<String, String> allColumns) {
-        // this.allColumns = allColumns;
-        // }
+        public Map<String, String> getAllMapColumns() {
+            return allMapColumns;
+        }
+
+        public void setAllMapColumns(Map<String, String> allMapColumns) {
+            this.allMapColumns = allMapColumns;
+        }
     }
 }
